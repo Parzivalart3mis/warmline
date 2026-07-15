@@ -6,6 +6,8 @@ const isPublicRoute = createRouteMatcher([
   '/sign-in(.*)',
   '/api/health',
   '/api/cron/daily',
+  // Diagnostic workflow spike — guarded by its own CRON_SECRET bearer check.
+  '/api/spike/workflow',
   '/manifest.webmanifest',
   '/sw.js',
   '/icons(.*)',
