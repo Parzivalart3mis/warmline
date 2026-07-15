@@ -59,12 +59,16 @@ export const POST = route(async (req) => {
   if (!(bytes[0] === 0x25 && bytes[1] === 0x50 && bytes[2] === 0x44 && bytes[3] === 0x46)) {
     throw new ApiError('VALIDATION_ERROR', 'That file is not a PDF.', 400);
   }
+  // Snapshot the bytes for storage BEFORE any parsing: unpdf/PDF.js detaches
+  // the ArrayBuffer it's given, which would otherwise leave us uploading an
+  // empty file to Blob.
+  const blobBytes = Buffer.from(bytes);
 
-  // Extract text at upload time (unpdf, Node runtime).
+  // Extract text at upload time (unpdf, Node runtime). Hand it its own copy.
   let extractedText = '';
   try {
     const { extractText, getDocumentProxy } = await import('unpdf');
-    const pdf = await getDocumentProxy(bytes);
+    const pdf = await getDocumentProxy(new Uint8Array(blobBytes));
     const { text } = await extractText(pdf, { mergePages: true });
     extractedText = text.trim().slice(0, 50_000);
   } catch {
@@ -88,14 +92,14 @@ export const POST = route(async (req) => {
   // Blob in real environments; data URI fallback keeps local dev working.
   let blobUrl: string;
   if (process.env.BLOB_READ_WRITE_TOKEN) {
-    const blob = await put(`resumes/${user.clerkUserId}/${fileName}`, Buffer.from(bytes), {
+    const blob = await put(`resumes/${user.clerkUserId}/${fileName}`, blobBytes, {
       access: 'public',
       addRandomSuffix: true,
       contentType: 'application/pdf',
     });
     blobUrl = blob.url;
   } else if (process.env.NODE_ENV !== 'production') {
-    blobUrl = `data:application/pdf;base64,${Buffer.from(bytes).toString('base64')}`;
+    blobUrl = `data:application/pdf;base64,${blobBytes.toString('base64')}`;
   } else {
     throw new ApiError('STORAGE_UNAVAILABLE', 'BLOB_READ_WRITE_TOKEN is not set.', 503);
   }
