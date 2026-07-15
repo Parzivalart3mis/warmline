@@ -80,8 +80,8 @@ are unavailable — swap `GmailSmtpSender` for a `GmailOAuthSender` behind the
 Requires a **personal @gmail.com** with 2-Step Verification on. Generate a
 16-character App Password at
 [myaccount.google.com/apppasswords](https://myaccount.google.com/apppasswords)
-and set `GMAIL_USER` + `GMAIL_APP_PASSWORD`. `GMAIL_USER` **must** match the
-email of your Clerk account — the app refuses to send if they differ.
+and set `GMAIL_USER` + `GMAIL_APP_PASSWORD`. Every email is sent `From:`
+`GMAIL_USER`; it does not need to match your Clerk sign-in email.
 
 ## Scripts
 

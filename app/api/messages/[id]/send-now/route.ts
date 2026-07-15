@@ -8,7 +8,6 @@ import { ApiError, route } from '@/lib/http';
 import { runGate, gateMode } from '@/lib/ai/gate';
 import { sendOne } from '@/lib/engine/send-one';
 import { getMailSender } from '@/lib/mail';
-import { senderIdentityError } from '@/lib/mail/identity';
 
 export const runtime = 'nodejs';
 export const maxDuration = 60;
@@ -39,12 +38,7 @@ export const POST = route<Ctx>(async (_req, ctx) => {
     throw new ApiError('EMPTY_DRAFT', 'Generate or write the draft before sending.', 422);
   }
 
-  // Surface identity problems before doing any work.
   const mailer = getMailSender();
-  if (mailer.kind === 'real') {
-    const identityProblem = senderIdentityError(process.env.GMAIL_USER, user.email);
-    if (identityProblem) throw new ApiError('IDENTITY_MISMATCH', identityProblem, 409);
-  }
 
   const [contact] = await db
     .select()

@@ -4,7 +4,6 @@ import { contacts, messages, resumes, runs, suppressions, users } from '@/db/sch
 import type { MailSender } from '@/lib/mail/sender';
 import { MailSendError } from '@/lib/mail/sender';
 import { rfcMessageId } from '@/lib/mail';
-import { senderIdentityError } from '@/lib/mail/identity';
 import { appendEvent } from './events';
 
 export type SendOutcome =
@@ -92,15 +91,9 @@ export async function sendOne(db: Db, mailer: MailSender, messageId: string): Pr
     });
   };
 
-  // Sender identity guard: From must be the identity the operator signed in as.
+  // Send from GMAIL_USER (the authenticated SMTP mailbox), falling back to the
+  // operator's account email when it isn't set.
   const fromAddress = process.env.GMAIL_USER ?? user.email;
-  if (mailer.kind === 'real') {
-    const identityProblem = senderIdentityError(process.env.GMAIL_USER, user.email);
-    if (identityProblem) {
-      await fail('IDENTITY_MISMATCH', identityProblem);
-      return { failed: true, code: 'IDENTITY_MISMATCH' };
-    }
-  }
 
   // 4. Our own deterministic RFC Message-ID, set BEFORE the send — if a retry
   // ever slips through, Gmail sees the same Message-ID and threads, not dupes.

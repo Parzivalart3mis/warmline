@@ -106,19 +106,18 @@ describe('sendOne — the idempotency contract', () => {
     expect(c?.status).toBe('failed');
   });
 
-  it('refuses to send as a different identity than the signed-in account', async () => {
+  it('sends from GMAIL_USER even when it differs from the account email', async () => {
     const prev = process.env.GMAIL_USER;
-    process.env.GMAIL_USER = 'someone-else@gmail.com';
+    process.env.GMAIL_USER = 'sender@gmail.com';
     try {
-      const user = await mkUser(db, { email: 'operator@gmail.com' });
+      const user = await mkUser(db, { email: 'operator@example.com' });
       const contact = await mkContact(db, user.clerkUserId);
       const message = await mkMessage(db, user.clerkUserId, contact.id, { status: 'queued' });
-      const realish: MailSender = {
-        kind: 'real',
-        send: async () => ({ messageId: 'x', response: 'ok' }),
-      };
-      const outcome = await sendOne(db, realish, message.id);
-      expect(outcome).toEqual({ failed: true, code: 'IDENTITY_MISMATCH' });
+      const mailer = new FakeMailSender();
+      const outcome = await sendOne(db, mailer, message.id);
+      expect(outcome).toEqual({ sent: true });
+      // From header is GMAIL_USER; no account-match guard blocks the send.
+      expect(mailer.outbox[0]?.from).toBe('sender@gmail.com');
     } finally {
       if (prev === undefined) delete process.env.GMAIL_USER;
       else process.env.GMAIL_USER = prev;

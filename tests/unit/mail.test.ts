@@ -1,7 +1,6 @@
 import { describe, it, expect, vi } from 'vitest';
 import { GmailSmtpSender } from '@/lib/mail/gmail-smtp';
 import { MailSendError } from '@/lib/mail/sender';
-import { senderIdentityError } from '@/lib/mail/identity';
 import { rfcMessageId } from '@/lib/mail';
 
 const hoisted = vi.hoisted(() => ({ sendMail: vi.fn() }));
@@ -57,23 +56,8 @@ describe('GmailSmtpSender', () => {
     await expect(sender.send(mail)).rejects.toMatchObject({ code: 'SMTP_550' });
   });
 
-  it('is marked as a real sender (identity guard applies)', () => {
+  it('exposes its kind as real', () => {
     expect(new GmailSmtpSender('me@gmail.com', 'p').kind).toBe('real');
-  });
-});
-
-describe('senderIdentityError', () => {
-  it('passes when GMAIL_USER matches the account (case-insensitive)', () => {
-    expect(senderIdentityError('Me@Gmail.com', 'me@gmail.com')).toBeNull();
-  });
-  it('flags a mismatch', () => {
-    expect(senderIdentityError('me@gmail.com', 'other@gmail.com')).toMatch(/does not match/);
-  });
-  it('flags a missing GMAIL_USER', () => {
-    expect(senderIdentityError(undefined, 'me@gmail.com')).toMatch(/not set/);
-  });
-  it('flags a missing account email', () => {
-    expect(senderIdentityError('me@gmail.com', null)).toMatch(/No account email/);
   });
 });
 

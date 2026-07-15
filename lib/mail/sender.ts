@@ -41,7 +41,7 @@ export class MailSendError extends Error {
 }
 
 export interface MailSender {
-  /** 'real' senders enforce the GMAIL_USER ↔ account identity guard. */
+  /** Whether this sender hits the network ('real') or an in-process outbox ('fake'). */
   readonly kind: 'real' | 'fake';
   send(mail: OutgoingMail): Promise<SendReceipt>;
 }
