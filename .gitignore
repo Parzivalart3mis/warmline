@@ -1,0 +1,29 @@
+# deps
+node_modules/
+
+# next
+.next/
+out/
+next-env.d.ts
+
+# env — never commit real keys
+.env
+.env.local
+.env*.local
+
+# local dev database (PGlite data dir)
+.pglite/
+
+# test artifacts
+coverage/
+playwright-report/
+test-results/
+
+# misc
+.DS_Store
+*.tsbuildinfo
+.vercel
+/.swc
+
+# Workflow SDK generated route handlers
+app/.well-known/

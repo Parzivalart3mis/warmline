@@ -1,0 +1,194 @@
+@import 'tailwindcss';
+@import 'tw-animate-css';
+
+@custom-variant dark (&:is(.dark *));
+
+/* ── Airmail palette ─────────────────────────────────────────────── */
+/* Paper, ink, and the red-and-blue stripe off an airmail envelope.  */
+/* --stamp is the airmail red: it appears in exactly ONE place — the */
+/* email that is going out right now. Never on buttons or badges.    */
+:root {
+  --bg: #f5f4f0;
+  --surface: #ffffff;
+  --border: #e0ded6;
+  --ink: #1a1c1e;
+  --muted: #63625e;
+  --primary: #274c77;
+  --primary-foreground: #ffffff;
+  --stamp: #b0303f;
+  --stamp-foreground: #ffffff;
+  --success: #2c6e4f;
+  --warning: #8a5e0f;
+  --error: #8e1b22;
+}
+
+.dark {
+  --bg: #141513;
+  --surface: #1f211f;
+  --border: #33352f;
+  --ink: #efede6;
+  --muted: #a29f94;
+  --primary: #7fa8d6;
+  --primary-foreground: #141513;
+  --stamp: #e5707c;
+  --stamp-foreground: #141513;
+  --success: #5fbf8e;
+  --warning: #e0b25c;
+  --error: #f08a84;
+}
+
+@theme inline {
+  --color-bg: var(--bg);
+  --color-surface: var(--surface);
+  --color-border: var(--border);
+  --color-ink: var(--ink);
+  --color-muted: var(--muted);
+  --color-primary: var(--primary);
+  --color-primary-foreground: var(--primary-foreground);
+  --color-stamp: var(--stamp);
+  --color-stamp-foreground: var(--stamp-foreground);
+  --color-success: var(--success);
+  --color-warning: var(--warning);
+  --color-error: var(--error);
+  --color-ring: var(--primary);
+
+  --font-sans: var(--font-instrument), ui-sans-serif, system-ui, sans-serif;
+  --font-serif: var(--font-newsreader), Georgia, 'Times New Roman', serif;
+  --font-mono: var(--font-plex-mono), ui-monospace, 'SF Mono', Menlo, monospace;
+
+  /* Type scale: 12 / 14 / 16 / 18 / 22 / 28 / 36 */
+  --text-xs: 12px;
+  --text-xs--line-height: 16px;
+  --text-sm: 14px;
+  --text-sm--line-height: 20px;
+  --text-base: 16px;
+  --text-base--line-height: 24px;
+  --text-lg: 18px;
+  --text-lg--line-height: 28px;
+  --text-xl: 22px;
+  --text-xl--line-height: 28px;
+  --text-2xl: 28px;
+  --text-2xl--line-height: 34px;
+  --text-3xl: 36px;
+  --text-3xl--line-height: 40px;
+
+  /* Radii: 6 / 10 / 14 / 22 (pill) */
+  --radius-sm: 6px;
+  --radius-md: 10px;
+  --radius-lg: 14px;
+  --radius-xl: 22px;
+}
+
+@layer base {
+  * {
+    border-color: var(--border);
+  }
+
+  html {
+    -webkit-text-size-adjust: 100%;
+  }
+
+  body {
+    background: var(--bg);
+    color: var(--ink);
+    font-family: var(--font-sans);
+    font-size: 16px;
+    -webkit-font-smoothing: antialiased;
+    -webkit-tap-highlight-color: transparent;
+  }
+
+  /* Kill the 300ms double-tap zoom delay on everything interactive. */
+  button,
+  a,
+  input,
+  select,
+  textarea,
+  [role='button'],
+  [role='tab'],
+  [role='switch'] {
+    touch-action: manipulation;
+  }
+
+  /* iOS auto-zooms on focus when a form control is under 16px,
+     regardless of the viewport meta. Never let that happen. */
+  input,
+  select,
+  textarea {
+    font-size: 16px;
+  }
+
+  :focus-visible {
+    outline: 2px solid var(--primary);
+    outline-offset: 2px;
+  }
+
+  ::selection {
+    background: color-mix(in srgb, var(--primary) 24%, transparent);
+  }
+}
+
+@layer utilities {
+  /* UI chrome only — never the email body, draft editor, or body text. */
+  .ui-chrome {
+    -webkit-user-select: none;
+    user-select: none;
+  }
+
+  .pt-safe {
+    padding-top: env(safe-area-inset-top);
+  }
+
+  .pb-safe {
+    padding-bottom: env(safe-area-inset-bottom);
+  }
+
+  .font-email {
+    font-family: var(--font-serif);
+    font-size: 18px;
+    line-height: 1.65;
+  }
+
+  .tabular {
+    font-family: var(--font-mono);
+    font-variant-numeric: tabular-nums;
+  }
+}
+
+/* The queue hairline: sweeps left→right across the sending row over
+   its send interval. One moving thing on screen, and it means one thing. */
+@keyframes hairline-sweep {
+  from {
+    transform: scaleX(var(--sweep-from, 0));
+  }
+  to {
+    transform: scaleX(1);
+  }
+}
+
+.hairline {
+  position: absolute;
+  left: 0;
+  bottom: 0;
+  height: 2px;
+  width: 100%;
+  background: var(--stamp);
+  transform-origin: left center;
+  animation: hairline-sweep var(--sweep-ms, 120000ms) linear forwards;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  ::before,
+  ::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+    scroll-behavior: auto !important;
+  }
+
+  /* Static position marker instead of a sweep; steps forward on poll. */
+  .hairline {
+    animation: none;
+    transform: scaleX(var(--sweep-from, 0));
+  }
+}
