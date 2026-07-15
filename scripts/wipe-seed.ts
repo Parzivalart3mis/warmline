@@ -23,7 +23,7 @@ async function main() {
   const sql = neon(url);
 
   const [before] = await sql`select count(*)::int n from contacts where user_id = ${SEED_USER_ID}`;
-  if (before.n === 0) {
+  if ((before?.n ?? 0) === 0) {
     const users = await sql`select 1 from users where clerk_user_id = ${SEED_USER_ID}`;
     if (users.length === 0) {
       console.log(`wipe-seed: no seed user (${SEED_USER_ID}) found — nothing to do.`);
