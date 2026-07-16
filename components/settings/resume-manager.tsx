@@ -2,7 +2,7 @@
 
 import { useRef, useState } from 'react';
 import useSWR from 'swr';
-import { FileText, Upload, Loader2, Star, Check } from 'lucide-react';
+import { FileText, Upload, Loader2, Star, Check, Trash2 } from 'lucide-react';
 import { toast } from 'sonner';
 import { fetcher, apiSend, ClientError } from '@/lib/api-client';
 import type { ResumeDTO } from '@/lib/types';
@@ -10,14 +10,43 @@ import { EmptyState } from '@/components/states';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogTitle,
+} from '@/components/ui/dialog';
 
 export function ResumeManager() {
   const { data, isLoading, mutate } = useSWR<{ resumes: ResumeDTO[] }>('/api/resumes', fetcher);
   const [label, setLabel] = useState('');
   const [uploading, setUploading] = useState(false);
+  const [pendingDelete, setPendingDelete] = useState<ResumeDTO | null>(null);
+  const [removing, setRemoving] = useState(false);
   const fileRef = useRef<HTMLInputElement>(null);
 
   const resumes = data?.resumes ?? [];
+
+  // If we're deleting the default and another exists, name its successor.
+  const successor =
+    pendingDelete?.isDefault && resumes.length > 1
+      ? resumes.find((r) => r.id !== pendingDelete.id)
+      : undefined;
+
+  const remove = async () => {
+    if (!pendingDelete) return;
+    setRemoving(true);
+    try {
+      await apiSend(`/api/resumes/${pendingDelete.id}`, 'DELETE');
+      toast.success('Resume deleted.');
+      setPendingDelete(null);
+      await mutate();
+    } catch (err) {
+      toast.error(err instanceof ClientError ? err.message : 'Could not delete the resume.');
+    } finally {
+      setRemoving(false);
+    }
+  };
 
   const upload = async () => {
     const file = fileRef.current?.files?.[0];
@@ -100,6 +129,13 @@ export function ResumeManager() {
                   Make default
                 </Button>
               )}
+              <button
+                onClick={() => setPendingDelete(r)}
+                aria-label={`Delete ${r.label}`}
+                className="ui-chrome flex size-11 shrink-0 items-center justify-center rounded-md text-muted active:bg-bg"
+              >
+                <Trash2 className="size-4" aria-hidden="true" />
+              </button>
             </li>
           ))}
         </ul>
@@ -127,6 +163,32 @@ export function ResumeManager() {
           Upload resume
         </Button>
       </div>
+
+      <Dialog open={pendingDelete !== null} onOpenChange={(o) => !o && setPendingDelete(null)}>
+        <DialogContent>
+          <DialogTitle>Delete “{pendingDelete?.label}”?</DialogTitle>
+          <DialogDescription>
+            {successor
+              ? `This is your default resume. “${successor.label}” will become the new default. Contacts using this version fall back to your default.`
+              : resumes.length === 1
+                ? 'This is your only resume. Deleting it means new drafts have no resume to draw from until you upload another.'
+                : 'Contacts using this version will fall back to your default. This cannot be undone.'}
+          </DialogDescription>
+          <div className="flex gap-2">
+            <Button
+              variant="secondary"
+              className="flex-1"
+              onClick={() => setPendingDelete(null)}
+            >
+              Keep
+            </Button>
+            <Button variant="destructive" className="flex-1" disabled={removing} onClick={remove}>
+              {removing ? <Loader2 className="animate-spin" /> : null}
+              Delete
+            </Button>
+          </div>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }

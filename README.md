@@ -103,6 +103,10 @@ and set `GMAIL_USER` + `GMAIL_APP_PASSWORD`. Every email is sent `From:`
 
 - **Unit** (`tests/unit`): schemas, the SSRF guard, DST-correct time math,
   jitter, the CSV parser, the faithfulness-gate parser, mail, formatters.
+Resume versions can be uploaded, set as default, and deleted
+(`DELETE /api/resumes/:id` — promotes the newest remaining resume to default
+and best-effort-removes the Blob).
+
 - **Integration** (`tests/integration`, in-process PGlite — no Docker): the
   compare-and-swap send claim (fire twice, assert one send), the partial unique
   indexes, three-checkpoint suppression, reply-cancels-follow-ups, cross-user

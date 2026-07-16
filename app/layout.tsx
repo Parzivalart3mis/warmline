@@ -59,7 +59,10 @@ export const metadata: Metadata = {
     apple: '/icons/apple-touch-icon.png',
   },
   other: {
-    'mobile-web-app-capable': 'yes',
+    // Next 15's appleWebApp.capable emits the standard `mobile-web-app-capable`
+    // but NOT Apple's tag — and iOS relies on the Apple tag to keep EVERY
+    // in-scope page standalone (not just the launch page). Add it explicitly.
+    'apple-mobile-web-app-capable': 'yes',
   },
 };
 
