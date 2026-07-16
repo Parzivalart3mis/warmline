@@ -1,15 +1,12 @@
-import { AppBar } from '@/components/app-bar';
+import { PageShell } from '@/components/page-shell';
 import { DraftsView } from '@/components/drafts/drafts-view';
 
 export const metadata = { title: 'Drafts' };
 
 export default function DraftsPage() {
   return (
-    <>
-      <AppBar title="Drafts" />
-      <main className="px-4 pt-4">
-        <DraftsView />
-      </main>
-    </>
+    <PageShell title="Drafts">
+      <DraftsView />
+    </PageShell>
   );
 }

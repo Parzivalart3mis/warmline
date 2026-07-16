@@ -5,7 +5,8 @@ import * as DialogPrimitive from '@radix-ui/react-dialog';
 import { X } from 'lucide-react';
 import { cn } from '@/lib/utils';
 
-/** Bottom sheet — the primary editing surface on a phone. */
+/** Bottom sheet on a phone; a centered modal on desktop. Built on Radix
+ *  Dialog, so the transformation is purely responsive CSS. */
 const Sheet = DialogPrimitive.Root;
 const SheetTrigger = DialogPrimitive.Trigger;
 const SheetClose = DialogPrimitive.Close;
@@ -20,12 +21,16 @@ function SheetContent({
       <DialogPrimitive.Overlay className="fixed inset-0 z-50 bg-ink/40 duration-200 data-[state=closed]:animate-out data-[state=closed]:fade-out-0 data-[state=open]:animate-in data-[state=open]:fade-in-0" />
       <DialogPrimitive.Content
         className={cn(
+          // Mobile: bottom sheet that slides up.
           'pb-safe fixed inset-x-0 bottom-0 z-50 flex max-h-[92dvh] flex-col gap-4 overflow-y-auto rounded-t-xl border-t bg-surface p-5 duration-300 ease-out data-[state=closed]:animate-out data-[state=closed]:slide-out-to-bottom data-[state=open]:animate-in data-[state=open]:slide-in-from-bottom',
+          // Desktop: a centered modal that zooms in.
+          'lg:inset-x-auto lg:bottom-auto lg:top-1/2 lg:left-1/2 lg:max-h-[85dvh] lg:w-full lg:max-w-lg lg:-translate-x-1/2 lg:-translate-y-1/2 lg:rounded-xl lg:border lg:p-6 lg:pb-6 lg:duration-200 lg:data-[state=closed]:slide-out-to-bottom-0 lg:data-[state=closed]:zoom-out-95 lg:data-[state=open]:slide-in-from-bottom-0 lg:data-[state=open]:zoom-in-95',
           className,
         )}
         {...props}
       >
-        <div aria-hidden="true" className="mx-auto h-1 w-9 shrink-0 rounded-xl bg-border" />
+        {/* Grab handle reads as mobile; hide it on the desktop modal. */}
+        <div aria-hidden="true" className="mx-auto h-1 w-9 shrink-0 rounded-xl bg-border lg:hidden" />
         {children}
         <DialogPrimitive.Close
           aria-label="Close"

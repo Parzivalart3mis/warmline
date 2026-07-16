@@ -2,26 +2,20 @@
 
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
-import { Send, Users, FileText, Settings } from 'lucide-react';
 import { cn } from '@/lib/utils';
+import { NAV_ITEMS, isActivePath } from './nav-items';
 
-const TABS = [
-  { href: '/queue', label: 'Queue', icon: Send },
-  { href: '/contacts', label: 'Contacts', icon: Users },
-  { href: '/drafts', label: 'Drafts', icon: FileText },
-  { href: '/settings', label: 'Settings', icon: Settings },
-] as const;
-
+/** Mobile-only primary nav. Hidden at lg+, where the sidebar takes over. */
 export function BottomNav() {
   const pathname = usePathname();
   return (
     <nav
       aria-label="Primary"
-      className="ui-chrome pb-safe fixed inset-x-0 bottom-0 z-40 border-t bg-surface/95 backdrop-blur"
+      className="ui-chrome pb-safe fixed inset-x-0 bottom-0 z-40 border-t bg-surface/95 backdrop-blur lg:hidden"
     >
       <ul className="mx-auto flex max-w-xl">
-        {TABS.map(({ href, label, icon: Icon }) => {
-          const active = pathname === href || pathname.startsWith(`${href}/`);
+        {NAV_ITEMS.map(({ href, label, icon: Icon }) => {
+          const active = isActivePath(pathname, href);
           return (
             <li key={href} className="flex-1">
               <Link
