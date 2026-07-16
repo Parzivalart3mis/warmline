@@ -2,6 +2,7 @@ import { generateObject, type LanguageModel } from 'ai';
 import { z } from 'zod';
 import type { ResearchFact } from '@/db/schema';
 import { draftModel, DRAFT_MODEL_ID, DRAFT_PROVIDER_OPTIONS } from './models';
+import { formatToday, tenseRule } from './today';
 
 export const draftSchema = z.object({
   subject: z.string().min(1).max(200),
@@ -26,6 +27,8 @@ export type DraftInput = {
   /** For follow-ups: the full previous message in the thread. */
   previous?: { subject: string; body: string; sentAt?: Date | null };
   step: number;
+  /** "Now" for temporal reasoning; defaults to the current date. */
+  now?: Date;
 };
 
 /**
@@ -44,6 +47,7 @@ export function draftPrompt(input: DraftInput): { system: string; prompt: string
     '- Every claim about the SENDER must be supported by the resume text.',
     '- Every claim about the RECIPIENT or their company must be supported by the provided facts or job posting.',
     '- No invented names, numbers, dates, or mutual connections. When in doubt, leave it out.',
+    `- ${tenseRule(formatToday(input.now))}`,
     "- End with a single, low-pressure ask and sign off with the sender's first name.",
     `- Tone: ${input.tone}.`,
   ].join('\n');

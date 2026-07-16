@@ -2,6 +2,7 @@ import { generateObject, type LanguageModel } from 'ai';
 import { z } from 'zod';
 import type { GateIssue, ResearchFact } from '@/db/schema';
 import { gateModel, GATE_PROVIDER_OPTIONS } from './models';
+import { formatToday, tenseRule } from './today';
 
 /**
  * §7.3 — the faithfulness gate. Sending is fully automatic, so this is the
@@ -32,6 +33,8 @@ export type GateInput = {
   resumeText: string;
   facts: ResearchFact[];
   jobPostingText?: string;
+  /** "Now" for temporal reasoning; defaults to the current date. */
+  now?: Date;
 };
 
 export function gateMode(): 'block' | 'warn' {
@@ -48,6 +51,7 @@ export async function runGate(
     '- Claims about the SENDER must be supported by the resume text.',
     '- Claims about the RECIPIENT or their company must be supported by the grounded facts (with their source URLs) or the job posting.',
     '- Any invented name, number, date, or mutual connection is a violation.',
+    `- ${tenseRule(formatToday(input.now))} A claim that the sender is "currently" studying or working somewhere whose resume date-range has already ended is UNSUPPORTED — flag it as unsupported_about_me.`,
     'Verdict "pass" only if every claim is supported. Otherwise "flag" and list each offending span (quote the exact words from the draft) with its reason.',
     `DRAFT SUBJECT: ${input.subject}`,
     `DRAFT BODY:\n${input.body}`,

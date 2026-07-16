@@ -121,6 +121,14 @@ describe('draft generator', () => {
     expect(prompt).toContain('The first email body');
     expect(prompt).toContain('Re: Original');
   });
+
+  it('injects today and the tense rule so finished degrees are not called ongoing', () => {
+    const { system } = draftPrompt({ ...draftInput, now: new Date('2026-07-16T00:00:00Z') });
+    expect(system).toContain('July 16, 2026');
+    expect(system).toMatch(/COMPLETED/);
+    expect(system).toMatch(/Present|Current/);
+    expect(system).toMatch(/not ongoing|currently/i);
+  });
 });
 
 describe('company research', () => {
