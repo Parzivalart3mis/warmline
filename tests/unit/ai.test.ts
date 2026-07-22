@@ -112,6 +112,40 @@ describe('draft generator', () => {
     expect(prompt).toContain('QCon talk');
   });
 
+  it('keeps the tone dynamic so the Settings dropdown stays live', () => {
+    for (const tone of ['warm-direct', 'formal', 'understated']) {
+      const { system } = draftPrompt({ ...draftInput, tone });
+      expect(system).toContain(`Tone: ${tone}.`);
+    }
+  });
+
+  it('constrains the subject line', () => {
+    const { system } = draftPrompt(draftInput);
+    expect(system).toMatch(/Subject line: under 8 words/);
+    expect(system).toMatch(/"opportunity"/);
+  });
+
+  it('restricts the ask to referral / pointer / resume review, never a call', () => {
+    const { system } = draftPrompt(draftInput);
+    expect(system).toMatch(/a referral for a named role/);
+    expect(system).toMatch(/a pointer to the right team or person/);
+    expect(system).toMatch(/a resume review/);
+    expect(system).toMatch(/Never ask for a call, meeting, coffee chat/);
+  });
+
+  it('requires company facts to earn their place, not act as flattery', () => {
+    const { system } = draftPrompt(draftInput);
+    expect(system).toMatch(/Never use a fact as standalone flattery/);
+  });
+
+  it('carries the banned-phrase list', () => {
+    const { system } = draftPrompt(draftInput);
+    for (const banned of ['I wanted to reach out', 'passionate', 'leverage', 'synergy']) {
+      expect(system).toContain(banned);
+    }
+    expect(system).toContain('No em dashes');
+  });
+
   it('includes the previous message for follow-ups', () => {
     const { prompt } = draftPrompt({
       ...draftInput,
