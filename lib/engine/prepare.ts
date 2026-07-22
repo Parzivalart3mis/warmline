@@ -19,23 +19,42 @@ export type PrepareDeps = {
   fetchPage?: (url: string) => Promise<string>;
 };
 
+
 export type PrepareOutcome = 'queued' | 'needs_review' | 'cancelled' | 'skipped';
 
 /**
- * §11 step 3 for ONE message: research → draft → faithfulness gate.
- * Runs as its own workflow step so each message gets its own retry budget
- * and no step invocation outlives a function timeout.
+ * Everything the draft and gate steps need, gathered once. Workflow steps
+ * persist their return values, so this is handed between steps rather than
+ * re-fetched (and re-paid for) in each.
  */
-export async function prepareOne(
+export type PrepareContext =
+  | { ready: false; outcome: PrepareOutcome }
+  | {
+      ready: true;
+      resumeText: string;
+      jobPostingText?: string;
+      facts: ResearchFact[];
+      grounded: boolean;
+      resumeLabel: string | null;
+      resumeVia: string;
+      resumeReason?: string;
+    };
+
+/**
+ * §11 step 3a — gather context: suppression re-check, job posting, resume
+ * selection, grounded research. Split from drafting so no single serverless
+ * invocation has to carry the whole pipeline.
+ */
+export async function prepareContext(
   db: Db,
   messageId: string,
   deps: PrepareDeps = {},
-): Promise<{ outcome: PrepareOutcome }> {
+): Promise<PrepareContext> {
   const [message] = await db.select().from(messages).where(eq(messages.id, messageId)).limit(1);
-  if (!message) return { outcome: 'skipped' };
+  if (!message) return { ready: false, outcome: 'skipped' };
   // Idempotent on step retry: anything past 'draft' was already prepared.
   if (message.status !== 'draft') {
-    return { outcome: message.status === 'queued' ? 'queued' : 'skipped' };
+    return { ready: false, outcome: message.status === 'queued' ? 'queued' : 'skipped' };
   }
 
   const [contact] = await db
@@ -48,7 +67,7 @@ export async function prepareOne(
     .from(users)
     .where(eq(users.clerkUserId, message.userId))
     .limit(1);
-  if (!contact || !user) return { outcome: 'skipped' };
+  if (!contact || !user) return { ready: false, outcome: 'skipped' };
 
   if (contact.suppressed) {
     await db.update(messages).set({ status: 'cancelled' }).where(eq(messages.id, messageId));
@@ -59,7 +78,7 @@ export async function prepareOne(
       messageId,
       payload: { where: 'prepare' },
     });
-    return { outcome: 'cancelled' };
+    return { ready: false, outcome: 'cancelled' };
   }
 
   // Job posting (SSRF-guarded), best-effort. Fetched first because it is a
@@ -81,7 +100,6 @@ export async function prepareOne(
     deps.selectModel ? { selectModel: deps.selectModel } : {},
   );
   const resume = choice.resume;
-  const resumeText = resume?.extractedText ?? '';
   // Pin it to the message so the gate and the attachment use this exact version.
   if (resume && message.resumeId !== resume.id) {
     await db.update(messages).set({ resumeId: resume.id }).where(eq(messages.id, messageId));
@@ -89,7 +107,6 @@ export async function prepareOne(
 
   // Research: cached on the contact for 14 days; re-ground only when stale.
   let facts: ResearchFact[] = contact.research ?? [];
-  let grounded = facts.length > 0;
   if (contact.researchOptIn && contact.company && !isResearchFresh(contact.researchedAt)) {
     facts = await researchCompany(
       {
@@ -104,81 +121,126 @@ export async function prepareOne(
         ...(deps.structuringModel ? { structuringModel: deps.structuringModel } : {}),
       },
     );
-    grounded = facts.length > 0;
     await db
       .update(contacts)
       .set({ research: facts, researchedAt: new Date() })
       .where(eq(contacts.id, contact.id));
   }
 
-  // Generate — unless this is an edited held draft being re-checked.
-  let subject = message.subject;
-  let body = message.body;
-  if (body.trim() === '') {
-    let previous: { subject: string; body: string } | undefined;
-    if (message.step > 1) {
-      const [parent] = await db
-        .select()
-        .from(messages)
-        .where(
-          and(
-            eq(messages.contactId, contact.id),
-            eq(messages.step, message.step - 1),
-            eq(messages.status, 'sent'),
-          ),
-        )
-        .limit(1);
-      if (parent) previous = { subject: parent.subject, body: parent.body };
-    }
+  return {
+    ready: true,
+    resumeText: resume?.extractedText ?? '',
+    // Trimmed to what the prompts actually use — this rides in workflow state.
+    ...(jobPostingText ? { jobPostingText: jobPostingText.slice(0, 6_000) } : {}),
+    facts,
+    grounded: facts.length > 0,
+    resumeLabel: resume?.label ?? null,
+    resumeVia: choice.via,
+    ...(choice.reason ? { resumeReason: choice.reason } : {}),
+  };
+}
 
-    const draft = await generateDraft(
-      {
-        resumeText,
-        tone: user.tone,
-        contact: {
-          firstName: contact.firstName,
-          lastName: contact.lastName,
-          company: contact.company,
-          contactRole: contact.contactRole,
-          targetRole: contact.targetRole,
-          hook: contact.hook,
-        },
-        facts,
-        ...(jobPostingText ? { jobPostingText } : {}),
-        ...(previous ? { previous } : {}),
-        step: message.step,
-      },
-      deps.draftModel ? { model: deps.draftModel } : {},
-    );
-    subject = draft.subject;
-    body = draft.body;
-    await db
-      .update(messages)
-      .set({ subject, body, model: draft.model, grounded })
-      .where(eq(messages.id, messageId));
-    await appendEvent(db, {
-      userId: message.userId,
-      type: 'generated',
-      contactId: contact.id,
-      messageId,
-      payload: {
-        step: message.step,
-        grounded,
-        resume: resume?.label ?? null,
-        resumeVia: choice.via,
-        ...(choice.reason ? { resumeReason: choice.reason } : {}),
-      },
-    });
+/** §11 step 3b — write the letter. Skips an already-drafted (edited) message. */
+export async function prepareDraft(
+  db: Db,
+  messageId: string,
+  ctx: PrepareContext,
+  deps: PrepareDeps = {},
+): Promise<void> {
+  if (!ctx.ready) return;
+  const [message] = await db.select().from(messages).where(eq(messages.id, messageId)).limit(1);
+  if (!message || message.status !== 'draft') return;
+  // An edited held draft keeps its text — only re-gated, never regenerated.
+  if (message.body.trim() !== '') return;
+
+  const [contact] = await db
+    .select()
+    .from(contacts)
+    .where(eq(contacts.id, message.contactId))
+    .limit(1);
+  const [user] = await db
+    .select()
+    .from(users)
+    .where(eq(users.clerkUserId, message.userId))
+    .limit(1);
+  if (!contact || !user) return;
+
+  let previous: { subject: string; body: string } | undefined;
+  if (message.step > 1) {
+    const [parent] = await db
+      .select()
+      .from(messages)
+      .where(
+        and(
+          eq(messages.contactId, contact.id),
+          eq(messages.step, message.step - 1),
+          eq(messages.status, 'sent'),
+        ),
+      )
+      .limit(1);
+    if (parent) previous = { subject: parent.subject, body: parent.body };
   }
 
-  // The gate. Blocks on flag; fails closed on error.
+  const draft = await generateDraft(
+    {
+      resumeText: ctx.resumeText,
+      tone: user.tone,
+      contact: {
+        firstName: contact.firstName,
+        lastName: contact.lastName,
+        company: contact.company,
+        contactRole: contact.contactRole,
+        targetRole: contact.targetRole,
+        hook: contact.hook,
+      },
+      facts: ctx.facts,
+      ...(ctx.jobPostingText ? { jobPostingText: ctx.jobPostingText } : {}),
+      ...(previous ? { previous } : {}),
+      step: message.step,
+    },
+    deps.draftModel ? { model: deps.draftModel } : {},
+  );
+
+  await db
+    .update(messages)
+    .set({ subject: draft.subject, body: draft.body, model: draft.model, grounded: ctx.grounded })
+    .where(eq(messages.id, messageId));
+  await appendEvent(db, {
+    userId: message.userId,
+    type: 'generated',
+    contactId: contact.id,
+    messageId,
+    payload: {
+      step: message.step,
+      grounded: ctx.grounded,
+      resume: ctx.resumeLabel,
+      resumeVia: ctx.resumeVia,
+      ...(ctx.resumeReason ? { resumeReason: ctx.resumeReason } : {}),
+    },
+  });
+}
+
+/** §11 step 3c — the faithfulness gate. Blocks on flag; fails closed on error. */
+export async function prepareGate(
+  db: Db,
+  messageId: string,
+  ctx: PrepareContext,
+  deps: PrepareDeps = {},
+): Promise<{ outcome: PrepareOutcome }> {
+  if (!ctx.ready) return { outcome: ctx.outcome };
+  const [message] = await db.select().from(messages).where(eq(messages.id, messageId)).limit(1);
+  if (!message) return { outcome: 'skipped' };
+  if (message.status !== 'draft') {
+    return { outcome: message.status === 'queued' ? 'queued' : 'skipped' };
+  }
+
   const gate = await runGate(
     {
-      subject,
-      body,
-      resumeText,
-      facts,
-      ...(jobPostingText ? { jobPostingText } : {}),
+      subject: message.subject,
+      body: message.body,
+      resumeText: ctx.resumeText,
+      facts: ctx.facts,
+      ...(ctx.jobPostingText ? { jobPostingText: ctx.jobPostingText } : {}),
     },
     deps.gateModel ? { model: deps.gateModel } : {},
   );
@@ -195,14 +257,14 @@ export async function prepareOne(
     await appendEvent(db, {
       userId: message.userId,
       type: 'gate_passed',
-      contactId: contact.id,
+      contactId: message.contactId,
       messageId,
       payload: gate.verdict === 'flag' ? { warnMode: true, issues: gate.issues.length } : {},
     });
     await appendEvent(db, {
       userId: message.userId,
       type: 'queued',
-      contactId: contact.id,
+      contactId: message.contactId,
       messageId,
     });
     return { outcome: 'queued' };
@@ -225,9 +287,25 @@ export async function prepareOne(
   await appendEvent(db, {
     userId: message.userId,
     type: 'gate_flagged',
-    contactId: contact.id,
+    contactId: message.contactId,
     messageId,
     payload: { verdict: gate.verdict, issues: gate.issues.length },
   });
   return { outcome: 'needs_review' };
+}
+
+/**
+ * The whole of §11 step 3 for ONE message, composed. The durable workflow
+ * calls the three parts as separate steps (so each gets its own function
+ * budget and retry); the inline dev runner uses this composition.
+ */
+export async function prepareOne(
+  db: Db,
+  messageId: string,
+  deps: PrepareDeps = {},
+): Promise<{ outcome: PrepareOutcome }> {
+  const ctx = await prepareContext(db, messageId, deps);
+  if (!ctx.ready) return { outcome: ctx.outcome };
+  await prepareDraft(db, messageId, ctx, deps);
+  return prepareGate(db, messageId, ctx, deps);
 }

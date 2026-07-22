@@ -14,8 +14,15 @@ export const researchModel = () => google(RESEARCH_MODEL_ID);
 export const draftModel = () => google(DRAFT_MODEL_ID);
 export const gateModel = () => google(GATE_MODEL_ID);
 
+/**
+ * Draft thinking is deliberately 'low', not 'high'. At 'high' the model spent
+ * ~1,900 of ~2,100 output tokens reasoning and a single call ran 60-180s —
+ * past a serverless function's budget, which stalled the workflow's prepare
+ * step. 'low' keeps the draft well inside one invocation. Quality is still
+ * guarded by the faithfulness gate, which blocks unsupported claims.
+ */
 export const DRAFT_PROVIDER_OPTIONS = {
-  google: { thinkingConfig: { thinkingLevel: 'high' as const } },
+  google: { thinkingConfig: { thinkingLevel: 'low' as const } },
 };
 
 export const GATE_PROVIDER_OPTIONS = {

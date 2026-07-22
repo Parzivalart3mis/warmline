@@ -5,7 +5,7 @@ import { jsonModel, draftModelMock, passGateModel } from '../helpers/mock-model'
 import type { Db } from '@/lib/db';
 import { messages, users } from '@/db/schema';
 import { resolveResumeForDraft } from '@/lib/engine/resolve-resume';
-import { prepareOne } from '@/lib/engine/prepare';
+import { prepareOne, prepareContext, prepareDraft, prepareGate } from '@/lib/engine/prepare';
 import { sendOne } from '@/lib/engine/send-one';
 import { FakeMailSender } from '@/lib/mail/fake';
 
@@ -146,5 +146,58 @@ describe('the chosen resume is pinned end to end', () => {
     const mailer = new FakeMailSender();
     await sendOne(db, mailer, message.id);
     expect(mailer.outbox[0]?.attachments?.[0]?.filename).toBe(backend.fileName);
+  });
+});
+
+describe('prepare split into workflow-sized steps', () => {
+  it('context → draft → gate produces the same result as the composed prepareOne', async () => {
+    const { user, ml } = await seedTwoResumes();
+    const contact = await mkContact(db, user.clerkUserId, {
+      targetRole: 'ML Engineer',
+      researchOptIn: false,
+      company: '',
+    });
+    const message = await mkMessage(db, user.clerkUserId, contact.id, {
+      status: 'draft',
+      body: '',
+    });
+
+    const deps = {
+      draftModel: draftModelMock('Split subject', 'Split body.'),
+      gateModel: passGateModel(),
+      selectModel: jsonModel({ resumeLabel: 'ML' }),
+    };
+
+    // Drive the three steps exactly as the durable workflow does.
+    const ctx = await prepareContext(db, message.id, deps);
+    expect(ctx.ready).toBe(true);
+    await prepareDraft(db, message.id, ctx, deps);
+    const { outcome } = await prepareGate(db, message.id, ctx, deps);
+
+    expect(outcome).toBe('queued');
+    const [after] = await db.select().from(messages).where(eq(messages.id, message.id));
+    expect(after?.status).toBe('queued');
+    expect(after?.subject).toBe('Split subject');
+    expect(after?.resumeId).toBe(ml.id); // resume pinned by the context step
+  });
+
+  it('stops after the context step when the contact is suppressed', async () => {
+    const { user } = await seedTwoResumes();
+    const contact = await mkContact(db, user.clerkUserId, { suppressed: true });
+    const message = await mkMessage(db, user.clerkUserId, contact.id, {
+      status: 'draft',
+      body: '',
+    });
+
+    const ctx = await prepareContext(db, message.id);
+    expect(ctx).toEqual({ ready: false, outcome: 'cancelled' });
+
+    // Later steps are no-ops on a non-ready context — nothing gets drafted.
+    await prepareDraft(db, message.id, ctx);
+    const { outcome } = await prepareGate(db, message.id, ctx);
+    expect(outcome).toBe('cancelled');
+    const [after] = await db.select().from(messages).where(eq(messages.id, message.id));
+    expect(after?.status).toBe('cancelled');
+    expect(after?.body).toBe('');
   });
 });

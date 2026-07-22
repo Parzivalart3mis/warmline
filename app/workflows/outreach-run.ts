@@ -2,7 +2,12 @@ import { sleep } from 'workflow';
 import { getDb } from '@/lib/db';
 import { getMailSender } from '@/lib/mail';
 import { planRun, GRACE_MS, type RunPlan } from '@/lib/engine/plan';
-import { prepareOne } from '@/lib/engine/prepare';
+import {
+  prepareContext,
+  prepareDraft,
+  prepareGate,
+  type PrepareContext,
+} from '@/lib/engine/prepare';
 import { sendDigest } from '@/lib/engine/digest';
 import { sendOne } from '@/lib/engine/send-one';
 import { finalizeRun, markRunSending } from '@/lib/engine/finalize';
@@ -10,7 +15,7 @@ import { finalizeRun, markRunSending } from '@/lib/engine/finalize';
 /**
  * §11 — the heart of the app. The workflow suspends in sleep() consuming no
  * compute, survives deploys, and retries failed steps. Every step is
- * idempotent: planRun re-plans nothing on retry (unique indexes), prepareOne
+ * idempotent: planRun re-plans nothing on retry (unique indexes), prepare
  * skips non-drafts, sendOne's CAS claim makes double-delivery impossible.
  */
 export async function outreachRun(runId: string, contactIds?: string[]) {
@@ -30,11 +35,16 @@ export async function outreachRun(runId: string, contactIds?: string[]) {
     await sleep(plan.msUntilSendTime);
   }
 
-  // Step 3 — research → draft → faithfulness gate, one step per message so
-  // each gets its own retry budget. Flags become needs_review and are
-  // skipped by the drip. Fail fast, before anything sends.
+  // Step 3 — context → draft → faithfulness gate. Three steps per message,
+  // not one: a single serverless invocation cannot carry a job-posting fetch,
+  // grounded research, a draft, and a gate inside its time budget. Each step
+  // retries independently. Flags become needs_review and are skipped by the
+  // drip. Fail fast, before anything sends.
   for (const messageId of plan.messageIds) {
-    await stepPrepare(messageId);
+    const ctx = await stepContext(messageId);
+    if (!ctx.ready) continue;
+    await stepDraft(messageId, ctx);
+    await stepGate(messageId, ctx);
   }
 
   // Step 4 — digest to the operator, then the grace window to cancel.
@@ -62,10 +72,22 @@ async function stepPlan(runId: string, contactIds?: string[]): Promise<RunPlan> 
   return planRun(db, runId, contactIds ? { contactIds } : {});
 }
 
-async function stepPrepare(messageId: string): Promise<string> {
+async function stepContext(messageId: string): Promise<PrepareContext> {
   'use step';
   const db = await getDb();
-  const { outcome } = await prepareOne(db, messageId);
+  return prepareContext(db, messageId);
+}
+
+async function stepDraft(messageId: string, ctx: PrepareContext): Promise<void> {
+  'use step';
+  const db = await getDb();
+  await prepareDraft(db, messageId, ctx);
+}
+
+async function stepGate(messageId: string, ctx: PrepareContext): Promise<string> {
+  'use step';
+  const db = await getDb();
+  const { outcome } = await prepareGate(db, messageId, ctx);
   return outcome;
 }
 
