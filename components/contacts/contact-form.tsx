@@ -134,7 +134,7 @@ export function ContactForm({ resumes, existing, onDone }: Props) {
             <SelectValue />
           </SelectTrigger>
           <SelectContent>
-            <SelectItem value={DEFAULT_RESUME}>Use my default</SelectItem>
+            <SelectItem value={DEFAULT_RESUME}>Automatic</SelectItem>
             {resumes.map((r) => (
               <SelectItem key={r.id} value={r.id}>
                 {r.label}
@@ -143,6 +143,10 @@ export function ContactForm({ resumes, existing, onDone }: Props) {
             ))}
           </SelectContent>
         </Select>
+        <p className="text-xs text-muted">
+          Automatic lets the AI match a version to the role and job posting, falling back to your
+          default. Pick one here to override it.
+        </p>
       </div>
 
       <div className="flex items-center justify-between rounded-md border px-3 py-2.5">

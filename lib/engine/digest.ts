@@ -1,6 +1,6 @@
 import { and, eq, inArray } from 'drizzle-orm';
 import type { Db } from '@/lib/db';
-import { contacts, messages, runs, users } from '@/db/schema';
+import { contacts, messages, resumes, runs, users } from '@/db/schema';
 import type { MailSender } from '@/lib/mail/sender';
 import { rfcMessageId } from '@/lib/mail';
 import { createId } from '@paralleldrive/cuid2';
@@ -10,7 +10,13 @@ import { createId } from '@paralleldrive/cuid2';
  * about to go out, with the 10-minute grace period to cancel from the app.
  */
 export function buildDigestText(input: {
-  queued: Array<{ name: string; company: string; subject: string; step: number }>;
+  queued: Array<{
+    name: string;
+    company: string;
+    subject: string;
+    step: number;
+    resume?: string | null;
+  }>;
   held: Array<{ name: string; company: string; reason: string }>;
   graceMinutes: number;
 }): string {
@@ -29,6 +35,7 @@ export function buildDigestText(input: {
       const stepNote = q.step > 1 ? ` (follow-up ${q.step - 1})` : '';
       lines.push(`  ${i + 1}. ${q.name} — ${q.company}${stepNote}`);
       lines.push(`     ${q.subject}`);
+      if (q.resume) lines.push(`     resume: ${q.resume}`);
     });
     lines.push('');
   } else {
@@ -72,16 +79,24 @@ export async function sendDigest(
             firstName: contacts.firstName,
             lastName: contacts.lastName,
             company: contacts.company,
+            resumeLabel: resumes.label,
           })
           .from(messages)
           .innerJoin(contacts, eq(messages.contactId, contacts.id))
+          .leftJoin(resumes, eq(messages.resumeId, resumes.id))
           .where(and(inArray(messages.id, messageIds), eq(messages.userId, run.userId)))
       : [];
 
   const name = (r: (typeof rows)[number]) => `${r.firstName} ${r.lastName}`.trim();
   const queued = rows
     .filter((r) => r.status === 'queued')
-    .map((r) => ({ name: name(r), company: r.company, subject: r.subject, step: r.step }));
+    .map((r) => ({
+      name: name(r),
+      company: r.company,
+      subject: r.subject,
+      step: r.step,
+      resume: r.resumeLabel,
+    }));
   const held = rows
     .filter((r) => r.status === 'needs_review')
     .map((r) => ({

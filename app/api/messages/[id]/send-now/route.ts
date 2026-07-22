@@ -51,7 +51,8 @@ export const POST = route<Ctx>(async (_req, ctx) => {
   }
 
   // Re-run the gate on the exact text that would go out.
-  const resumeId = contact.resumeId ?? user.defaultResumeId;
+  // Re-gate against the version this draft was written from.
+  const resumeId = message.resumeId ?? contact.resumeId ?? user.defaultResumeId;
   const [resume] = resumeId
     ? await db.select().from(resumes).where(eq(resumes.id, resumeId)).limit(1)
     : await db

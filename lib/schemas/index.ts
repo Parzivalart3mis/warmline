@@ -94,6 +94,7 @@ export const settingsUpdateSchema = z
     maxFollowups: z.int().min(0).max(5).optional(),
     tone: z.string().trim().min(1).max(200).optional(),
     defaultResumeId: z.preprocess(emptyToUndefined, z.string().max(64).optional()),
+    autoSelectResume: z.boolean().optional(),
   })
   .refine((v) => Object.keys(v).length > 0, 'Nothing to update.')
   .refine(

@@ -1,7 +1,7 @@
 import { streamObject } from 'ai';
 import { and, eq, inArray } from 'drizzle-orm';
 import { getDb } from '@/lib/db';
-import { contacts, messages, resumes, type ResearchFact } from '@/db/schema';
+import { contacts, messages, type ResearchFact } from '@/db/schema';
 import { requireUserRecord } from '@/lib/auth';
 import { assertRateLimit } from '@/lib/ratelimit';
 import { ApiError, readJson, route } from '@/lib/http';
@@ -12,6 +12,7 @@ import { researchCompany, isResearchFresh } from '@/lib/ai/research';
 import { safeFetchText } from '@/lib/net/safe-fetch';
 import { htmlToText } from '@/lib/net/html-text';
 import { appendEvent } from '@/lib/engine/events';
+import { resolveResumeForDraft } from '@/lib/engine/resolve-resume';
 
 export const runtime = 'nodejs';
 export const maxDuration = 120;
@@ -70,16 +71,8 @@ export const POST = route(async (req) => {
     messageId = row.id;
   }
 
-  // Context: resume, job posting (SSRF-guarded), cached research.
-  const resumeId = contact.resumeId ?? user.defaultResumeId;
-  const [resume] = resumeId
-    ? await db.select().from(resumes).where(eq(resumes.id, resumeId)).limit(1)
-    : await db
-        .select()
-        .from(resumes)
-        .where(and(eq(resumes.userId, user.clerkUserId), eq(resumes.isDefault, true)))
-        .limit(1);
-
+  // Context: job posting (SSRF-guarded) first — it's a signal for choosing
+  // the resume version — then the resume, then cached research.
   let jobPostingText: string | undefined;
   if (contact.jobUrl) {
     try {
@@ -87,6 +80,17 @@ export const POST = route(async (req) => {
     } catch {
       jobPostingText = undefined;
     }
+  }
+
+  // Explicit contact choice → AI selection → user default.
+  const choice = await resolveResumeForDraft(db, {
+    user,
+    contact,
+    ...(jobPostingText ? { jobPostingText } : {}),
+  });
+  const resume = choice.resume;
+  if (resume) {
+    await db.update(messages).set({ resumeId: resume.id }).where(eq(messages.id, messageId));
   }
 
   let facts: ResearchFact[] = contact.research ?? [];
@@ -164,7 +168,13 @@ export const POST = route(async (req) => {
         type: 'generated',
         contactId: contact.id,
         messageId,
-        payload: { step, grounded, streamed: true },
+        payload: {
+          step,
+          grounded,
+          streamed: true,
+          resume: resume?.label ?? null,
+          resumeVia: choice.via,
+        },
       });
     },
   });

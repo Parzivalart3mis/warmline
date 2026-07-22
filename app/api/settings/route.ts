@@ -62,6 +62,9 @@ export const PATCH = route(async (req) => {
       ...(input.maxFollowups !== undefined ? { maxFollowups: input.maxFollowups } : {}),
       ...(input.tone !== undefined ? { tone: input.tone } : {}),
       ...(input.defaultResumeId !== undefined ? { defaultResumeId: input.defaultResumeId } : {}),
+      ...(input.autoSelectResume !== undefined
+        ? { autoSelectResume: input.autoSelectResume }
+        : {}),
     })
     .where(eq(users.clerkUserId, user.clerkUserId))
     .returning();

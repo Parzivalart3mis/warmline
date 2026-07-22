@@ -1,19 +1,21 @@
 import { and, eq } from 'drizzle-orm';
 import type { LanguageModel } from 'ai';
 import type { Db } from '@/lib/db';
-import { contacts, messages, resumes, users, type ResearchFact } from '@/db/schema';
+import { contacts, messages, users, type ResearchFact } from '@/db/schema';
 import { generateDraft } from '@/lib/ai/draft';
 import { runGate, gateMode } from '@/lib/ai/gate';
 import { researchCompany, isResearchFresh } from '@/lib/ai/research';
 import { safeFetchText } from '@/lib/net/safe-fetch';
 import { htmlToText } from '@/lib/net/html-text';
 import { appendEvent } from './events';
+import { resolveResumeForDraft } from './resolve-resume';
 
 export type PrepareDeps = {
   draftModel?: LanguageModel;
   gateModel?: LanguageModel;
   groundedModel?: LanguageModel;
   structuringModel?: LanguageModel;
+  selectModel?: LanguageModel;
   fetchPage?: (url: string) => Promise<string>;
 };
 
@@ -60,18 +62,8 @@ export async function prepareOne(
     return { outcome: 'cancelled' };
   }
 
-  // Resume: the contact's chosen version, else the user's default.
-  const resumeId = contact.resumeId ?? user.defaultResumeId;
-  const [resume] = resumeId
-    ? await db.select().from(resumes).where(eq(resumes.id, resumeId)).limit(1)
-    : await db
-        .select()
-        .from(resumes)
-        .where(and(eq(resumes.userId, user.clerkUserId), eq(resumes.isDefault, true)))
-        .limit(1);
-  const resumeText = resume?.extractedText ?? '';
-
-  // Job posting (SSRF-guarded), best-effort.
+  // Job posting (SSRF-guarded), best-effort. Fetched first because it is a
+  // primary signal for choosing which resume version to pitch.
   let jobPostingText: string | undefined;
   if (contact.jobUrl) {
     try {
@@ -80,6 +72,19 @@ export async function prepareOne(
     } catch {
       jobPostingText = undefined;
     }
+  }
+
+  // Resume: explicit contact choice → AI selection → user default.
+  const choice = await resolveResumeForDraft(
+    db,
+    { user, contact, ...(jobPostingText ? { jobPostingText } : {}) },
+    deps.selectModel ? { selectModel: deps.selectModel } : {},
+  );
+  const resume = choice.resume;
+  const resumeText = resume?.extractedText ?? '';
+  // Pin it to the message so the gate and the attachment use this exact version.
+  if (resume && message.resumeId !== resume.id) {
+    await db.update(messages).set({ resumeId: resume.id }).where(eq(messages.id, messageId));
   }
 
   // Research: cached on the contact for 14 days; re-ground only when stale.
@@ -156,7 +161,13 @@ export async function prepareOne(
       type: 'generated',
       contactId: contact.id,
       messageId,
-      payload: { step: message.step, grounded },
+      payload: {
+        step: message.step,
+        grounded,
+        resume: resume?.label ?? null,
+        resumeVia: choice.via,
+        ...(choice.reason ? { resumeReason: choice.reason } : {}),
+      },
     });
   }
 

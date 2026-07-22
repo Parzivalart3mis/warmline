@@ -100,7 +100,10 @@ export async function sendOne(db: Db, mailer: MailSender, messageId: string): Pr
   const rfcId = message.rfcMessageId ?? rfcMessageId(message.id);
   await db.update(messages).set({ rfcMessageId: rfcId }).where(eq(messages.id, messageId));
 
-  const resumeId = contact.resumeId ?? user.defaultResumeId;
+  // Attach the exact version this draft was written from, so the email's
+  // claims and its attachment can never diverge. Older messages predating
+  // that pin fall back to the contact's pick, then the user default.
+  const resumeId = message.resumeId ?? contact.resumeId ?? user.defaultResumeId;
   const [resume] = resumeId
     ? await db.select().from(resumes).where(eq(resumes.id, resumeId)).limit(1)
     : await db

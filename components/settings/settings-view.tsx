@@ -73,6 +73,7 @@ function SettingsForm({ settings, onSaved }: { settings: SettingsDTO; onSaved: (
     followupDays: settings.followupDays,
     maxFollowups: settings.maxFollowups,
     tone: settings.tone,
+    autoSelectResume: settings.autoSelectResume,
   });
   const [saving, setSaving] = useState(false);
 
@@ -204,6 +205,12 @@ function SettingsForm({ settings, onSaved }: { settings: SettingsDTO; onSaved: (
             </SelectContent>
           </Select>
         </FieldRow>
+        <ToggleRow
+          label="Let AI pick the resume version"
+          hint="Only when you haven't chosen one on the contact. Uses the target role and job posting."
+          checked={form.autoSelectResume}
+          onChange={(v) => set('autoSelectResume', v)}
+        />
       </Section>
 
       <div className="sticky bottom-24 z-10">

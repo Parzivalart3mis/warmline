@@ -80,6 +80,8 @@ export const users = pgTable('users', {
   maxFollowups: integer().notNull().default(2),
   tone: text().notNull().default('warm-direct'),
   defaultResumeId: text(),
+  /** Let AI pick the resume version when a contact has no explicit choice. */
+  autoSelectResume: boolean().notNull().default(true),
   createdAt: timestamp({ withTimezone: true }).notNull().defaultNow(),
   updatedAt: timestamp({ withTimezone: true })
     .notNull()
@@ -181,6 +183,9 @@ export const messages = pgTable(
     /** 1 = initial, 2+ = follow-up. */
     step: integer().notNull().default(1),
     runId: text().references(() => runs.id),
+    /** The resume this draft was written from — also the one attached at send
+     *  time, so the email's claims and its attachment can never diverge. */
+    resumeId: text().references(() => resumes.id, { onDelete: 'set null' }),
     status: messageStatusEnum().notNull().default('draft'),
     checkStatus: checkStatusEnum().notNull().default('pending'),
     checkIssues: jsonb().$type<GateIssue[]>(),

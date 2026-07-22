@@ -8,6 +8,13 @@
       "when": 1784077334301,
       "tag": "0000_ambiguous_red_hulk",
       "breakpoints": true
+    },
+    {
+      "idx": 1,
+      "version": "7",
+      "when": 1784683420393,
+      "tag": "0001_sudden_steel_serpent",
+      "breakpoints": true
     }
   ]
 }
