@@ -199,25 +199,43 @@ export async function prepareDraft(
   }
 
   const grounded = p.facts.length > 0;
-  const draft = await generateDraft(
-    {
-      resumeText: p.resumeText,
-      tone: user.tone,
-      contact: {
-        firstName: contact.firstName,
-        lastName: contact.lastName,
-        company: contact.company,
-        contactRole: contact.contactRole,
-        targetRole: contact.targetRole,
-        hook: contact.hook,
+  let draft: Awaited<ReturnType<typeof generateDraft>>;
+  try {
+    draft = await generateDraft(
+      {
+        resumeText: p.resumeText,
+        tone: user.tone,
+        contact: {
+          firstName: contact.firstName,
+          lastName: contact.lastName,
+          company: contact.company,
+          contactRole: contact.contactRole,
+          targetRole: contact.targetRole,
+          hook: contact.hook,
+        },
+        facts: p.facts,
+        ...(p.jobPostingText ? { jobPostingText: p.jobPostingText } : {}),
+        ...(previous ? { previous } : {}),
+        step: message.step,
       },
-      facts: p.facts,
-      ...(p.jobPostingText ? { jobPostingText: p.jobPostingText } : {}),
-      ...(previous ? { previous } : {}),
-      step: message.step,
-    },
-    deps.draftModel ? { model: deps.draftModel } : {},
-  );
+      deps.draftModel ? { model: deps.draftModel } : {},
+    );
+  } catch (err) {
+    // Record WHY before rethrowing. A failing workflow step is otherwise
+    // invisible outside the platform's logs; this leaves a trail in the DB
+    // while still letting the step retry.
+    await db
+      .update(messages)
+      .set({
+        errorCode: 'DRAFT_FAILED',
+        errorMessage: (err instanceof Error ? `${err.name}: ${err.message}` : String(err)).slice(
+          0,
+          500,
+        ),
+      })
+      .where(eq(messages.id, messageId));
+    throw err;
+  }
 
   await db
     .update(messages)

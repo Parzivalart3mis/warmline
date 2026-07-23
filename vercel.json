@@ -1,5 +1,9 @@
 {
   "$schema": "https://openapi.vercel.sh/vercel.json",
   "buildCommand": "pnpm db:migrate:deploy && pnpm build",
+  "functions": {
+    "app/.well-known/workflow/v1/**": { "maxDuration": 60 },
+    "app/api/**": { "maxDuration": 60 }
+  },
   "crons": [{ "path": "/api/cron/daily", "schedule": "0 6 * * *" }]
 }
