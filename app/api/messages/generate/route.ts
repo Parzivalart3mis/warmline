@@ -10,7 +10,7 @@ import { draftPrompt, draftSchema } from '@/lib/ai/draft';
 import { draftModel, DRAFT_MODEL_ID, DRAFT_PROVIDER_OPTIONS } from '@/lib/ai/models';
 import { researchCompany, isResearchFresh } from '@/lib/ai/research';
 import { safeFetchText } from '@/lib/net/safe-fetch';
-import { htmlToText } from '@/lib/net/html-text';
+import { jobPostingText as extractJobText } from '@/lib/net/job-posting';
 import { appendEvent } from '@/lib/engine/events';
 import { resolveResumeForDraft } from '@/lib/engine/resolve-resume';
 
@@ -76,7 +76,7 @@ export const POST = route(async (req) => {
   let jobPostingText: string | undefined;
   if (contact.jobUrl) {
     try {
-      jobPostingText = htmlToText(await safeFetchText(contact.jobUrl));
+      jobPostingText = extractJobText(await safeFetchText(contact.jobUrl));
     } catch {
       jobPostingText = undefined;
     }

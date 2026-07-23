@@ -6,7 +6,7 @@ import { generateDraft } from '@/lib/ai/draft';
 import { runGate, gateMode } from '@/lib/ai/gate';
 import { researchCompany, isResearchFresh } from '@/lib/ai/research';
 import { safeFetchText } from '@/lib/net/safe-fetch';
-import { htmlToText } from '@/lib/net/html-text';
+import { jobPostingText as extractJobText } from '@/lib/net/job-posting';
 import { appendEvent } from './events';
 import { resolveResumeForDraft } from './resolve-resume';
 
@@ -87,7 +87,7 @@ export async function prepareContext(
   if (contact.jobUrl) {
     try {
       const fetchPage = deps.fetchPage ?? ((url: string) => safeFetchText(url));
-      jobPostingText = htmlToText(await fetchPage(contact.jobUrl));
+      jobPostingText = extractJobText(await fetchPage(contact.jobUrl));
     } catch {
       jobPostingText = undefined;
     }
