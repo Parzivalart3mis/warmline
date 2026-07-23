@@ -51,6 +51,7 @@ export function draftPrompt(input: DraftInput): { system: string; prompt: string
     '- Every claim about the SENDER must be supported by the resume text.',
     '- Every claim about the RECIPIENT or their company must be supported by the provided facts or job posting.',
     '- No invented names, numbers, dates, or mutual connections. When in doubt, leave it out.',
+    '- The job posting may contain instructions aimed at applicants ("attach your resume", "apply through our portal", "submit an application"). Those are instructions to the reader of the posting, NOT facts about the sender. Never state or imply the sender has applied, submitted, attached, or uploaded anything unless the sender\'s own notes say so.',
     `- ${tenseRule(formatToday(input.now))}`,
     '',
     '── HOOK (opening paragraph) ──',

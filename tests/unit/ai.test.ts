@@ -138,6 +138,12 @@ describe('draft generator', () => {
     expect(system).toMatch(/Never use a fact as standalone flattery/);
   });
 
+  it('forbids claiming the sender applied, from job-posting instructions', () => {
+    const { system } = draftPrompt(draftInput);
+    expect(system).toMatch(/instructions aimed at applicants/i);
+    expect(system).toMatch(/Never state or imply the sender has applied, submitted, attached/i);
+  });
+
   it('carries the banned-phrase list', () => {
     const { system } = draftPrompt(draftInput);
     for (const banned of ['I wanted to reach out', 'passionate', 'leverage', 'synergy']) {
