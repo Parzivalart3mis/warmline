@@ -32,7 +32,11 @@ export function QueueBoard() {
 
   const activeRun = useMemo(() => {
     const runs = runsData?.runs ?? [];
-    return runs.find((r) => ACTIVE.has(r.status)) ?? runs[0] ?? null;
+    // A cancelled run is never "active", even if its status was left mid-flight
+    // (a workflow that died before finalizing leaves 'waiting' behind). Without
+    // this, an old cancelled run shadows the real one and the board shows a
+    // stale list of cancelled rows.
+    return runs.find((r) => ACTIVE.has(r.status) && !r.cancelled) ?? runs[0] ?? null;
   }, [runsData]);
 
   const isActive = activeRun ? ACTIVE.has(activeRun.status) : false;

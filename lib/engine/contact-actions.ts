@@ -65,7 +65,10 @@ export async function suppressContact(db: Db, userId: string, contactId: string,
 export async function cancelRun(db: Db, userId: string, runId: string) {
   const updated = await db
     .update(runs)
-    .set({ cancelled: true })
+    // Close the run out here rather than leaving it 'waiting' for finalizeRun
+    // to tidy up: if the workflow already died, finalize never runs and the
+    // run lingers in an active status forever, shadowing newer runs.
+    .set({ cancelled: true, status: 'cancelled', finishedAt: new Date() })
     .where(and(eq(runs.id, runId), eq(runs.userId, userId)))
     .returning();
   const run = updated[0];

@@ -101,3 +101,22 @@ describe('sendDigest', () => {
     expect(mailer.outbox[0]?.text).toContain('Nothing is queued');
   });
 });
+
+describe('cancelRun closes the run out', () => {
+  it('marks it cancelled AND terminal, so it cannot shadow later runs', async () => {
+    const { cancelRun } = await import('@/lib/engine/contact-actions');
+    const user = await mkUser(db);
+    const run = await mkRun(db, user.clerkUserId, { kind: 'manual', status: 'waiting' });
+    const contact = await mkContact(db, user.clerkUserId, { status: 'queued' });
+    await mkMessage(db, user.clerkUserId, contact.id, { runId: run.id, status: 'queued' });
+
+    await cancelRun(db, user.clerkUserId, run.id);
+
+    const [after] = await db.select().from(runs).where(eq(runs.id, run.id));
+    expect(after?.cancelled).toBe(true);
+    // Previously this stayed 'waiting' — an active status the Queue board
+    // treated as the current run, hiding newer ones behind stale rows.
+    expect(after?.status).toBe('cancelled');
+    expect(after?.finishedAt).toBeInstanceOf(Date);
+  });
+});
