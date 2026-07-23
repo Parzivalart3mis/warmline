@@ -10,17 +10,26 @@ import { formatToday, tenseRule } from './today';
  * It is a GATE, not a suggestion: on `flag` the message is held; if the gate
  * itself errors twice, the message is held. Fail closed.
  */
+/**
+ * `span` is model-generated free text, so it carries no length cap: a hard
+ * `.max()` would turn an over-long quote into a total generation failure,
+ * which the caller treats as a gate error and holds a message that was
+ * probably fine. Length is clamped after parsing instead. The enums stay
+ * strict — those are the parts that must not drift.
+ */
 export const gateSchema = z.object({
   verdict: z.enum(['pass', 'flag']),
   issues: z
     .array(
       z.object({
-        span: z.string().min(1).max(300),
+        span: z.string().min(1),
         reason: z.enum(['unsupported_about_me', 'unsupported_about_them', 'fabricated_source']),
       }),
     )
     .max(20),
 });
+
+const MAX_SPAN = 300;
 
 export type GateResult = {
   verdict: 'pass' | 'flag' | 'error';
@@ -74,13 +83,22 @@ export async function runGate(
         prompt,
         providerOptions: GATE_PROVIDER_OPTIONS,
       });
-      const { verdict, issues } = result.object;
+      const { verdict } = result.object;
+      const issues = result.object.issues.map((i) => ({
+        ...i,
+        span: i.span.slice(0, MAX_SPAN),
+      }));
       // Defensive: a "pass" that lists issues is a flag.
       if (verdict === 'pass' && issues.length > 0) {
         return { verdict: 'flag', issues };
       }
       return { verdict, issues };
-    } catch {
+    } catch (err) {
+      // Fails closed (holds the message) — so make the reason visible.
+      console.warn(
+        `[gate] attempt ${attempt}/${attempts} failed:`,
+        err instanceof Error ? `${err.name}: ${err.message.split('\n')[0]}` : err,
+      );
       if (attempt === attempts) {
         return { verdict: 'error', issues: [] };
       }

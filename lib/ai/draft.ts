@@ -4,10 +4,21 @@ import type { ResearchFact } from '@/db/schema';
 import { draftModel, DRAFT_MODEL_ID, DRAFT_PROVIDER_OPTIONS } from './models';
 import { formatToday, tenseRule } from './today';
 
+/**
+ * No length caps: the prompt already constrains the email (subject under 8
+ * words, body under 180 words), and a hard `.max()` here would turn a slightly
+ * long draft into a failed generation rather than a slightly long draft. The
+ * operator reviews it either way. Lengths are clamped to the DB column limits
+ * when persisted.
+ */
 export const draftSchema = z.object({
-  subject: z.string().min(1).max(200),
-  body: z.string().min(1).max(2_000),
+  subject: z.string().min(1),
+  body: z.string().min(1),
 });
+
+/** Column limits from db/schema.ts — the last line of defence before insert. */
+const MAX_SUBJECT = 200;
+const MAX_BODY = 10_000;
 
 export type Draft = z.infer<typeof draftSchema>;
 
@@ -117,10 +128,13 @@ export async function generateDraft(
     prompt,
     providerOptions: DRAFT_PROVIDER_OPTIONS,
   });
-  const draft = result.object;
+  const draft = {
+    subject: result.object.subject.slice(0, MAX_SUBJECT),
+    body: result.object.body.slice(0, MAX_BODY),
+  };
   // Deterministic guarantee, not a hope: follow-ups thread under Re: <original>.
   if (input.previous) {
-    const expected = `Re: ${input.previous.subject}`;
+    const expected = `Re: ${input.previous.subject}`.slice(0, MAX_SUBJECT);
     if (draft.subject !== expected) draft.subject = expected;
   }
   return { ...draft, model: DRAFT_MODEL_ID };

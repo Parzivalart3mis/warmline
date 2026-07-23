@@ -69,3 +69,21 @@ describe('selectResume', () => {
     expect(picked).toBeNull();
   });
 });
+
+describe('over-long model output does not break selection (regression)', () => {
+  it('clamps a long reason instead of failing the whole call', async () => {
+    // The real bug: `reason` had .max(200), so a longer explanation made
+    // structured-output generation fail and silently fell back to the default.
+    const picked = await selectResume(
+      { candidates, targetRole: 'Backend Engineer' },
+      {
+        model: jsonModel({
+          resumeLabel: 'Backend',
+          reason: 'Because '.repeat(60), // ~480 chars, well over the old cap
+        }),
+      },
+    );
+    expect(picked?.id).toBe('r-backend'); // still selects
+    expect(picked?.reason?.length).toBeLessThanOrEqual(200); // clamped, not fatal
+  });
+});

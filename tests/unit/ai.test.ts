@@ -245,3 +245,25 @@ describe('research freshness', () => {
     expect(isResearchFresh(null, now)).toBe(false);
   });
 });
+
+describe('over-long model output is clamped, not fatal (regression)', () => {
+  it('gate: a very long span still yields a usable flag', async () => {
+    const result = await runGate(gateInput, {
+      model: jsonModel({
+        verdict: 'flag',
+        issues: [{ span: 'x'.repeat(900), reason: 'unsupported_about_me' }],
+      }),
+    });
+    expect(result.verdict).toBe('flag'); // not 'error'
+    expect(result.issues[0]?.span.length).toBeLessThanOrEqual(300);
+  });
+
+  it('draft: an over-long body is truncated rather than failing generation', async () => {
+    const result = await generateDraft(draftInput, {
+      model: jsonModel({ subject: 'S'.repeat(400), body: 'word '.repeat(4000) }),
+    });
+    expect(result.subject.length).toBeLessThanOrEqual(200);
+    expect(result.body.length).toBeLessThanOrEqual(10_000);
+    expect(result.body.length).toBeGreaterThan(0);
+  });
+});

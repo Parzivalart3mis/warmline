@@ -24,10 +24,18 @@ export type SelectResumeInput = {
   jobPostingText?: string;
 };
 
+/**
+ * Deliberately permissive. A tight `.max()` on model-generated free text turns
+ * "slightly too long" into a total structured-output failure — the model never
+ * sees the limit, so it violates it at random. Accept whatever comes back and
+ * clamp the length in code below.
+ */
 const selectionSchema = z.object({
-  resumeLabel: z.string().min(1).max(120),
-  reason: z.string().max(200).optional(),
+  resumeLabel: z.string().min(1),
+  reason: z.string().optional(),
 });
+
+const MAX_REASON = 200;
 
 /** Is there enough signal to make a meaningful choice? */
 export function hasSelectionSignal(input: {
@@ -71,12 +79,18 @@ export async function selectResume(
     const match = input.candidates.find((c) => c.label.trim().toLowerCase() === wanted);
     if (!match) return null;
 
+    const reason = result.object.reason?.slice(0, MAX_REASON);
     return {
       id: match.id,
       label: match.label,
-      ...(result.object.reason ? { reason: result.object.reason } : {}),
+      ...(reason ? { reason } : {}),
     };
-  } catch {
+  } catch (err) {
+    // Fail open to the user's default — but say so, rather than vanishing.
+    console.warn(
+      '[select-resume] falling back to default:',
+      err instanceof Error ? `${err.name}: ${err.message.split('\n')[0]}` : err,
+    );
     return null;
   }
 }
