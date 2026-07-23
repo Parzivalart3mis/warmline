@@ -186,6 +186,18 @@ export const messages = pgTable(
     /** The resume this draft was written from — also the one attached at send
      *  time, so the email's claims and its attachment can never diverge. */
     resumeId: text().references(() => resumes.id, { onDelete: 'set null' }),
+    /**
+     * Context gathered before drafting: the fetched job posting and how the
+     * resume was chosen. Persisted rather than passed between workflow steps —
+     * durable workflows store every step argument for replay, so handing a few
+     * KB between steps grows the run's state until it collapses. Steps take an
+     * id and read this instead.
+     */
+    prepareMeta: jsonb().$type<{
+      jobPostingText?: string;
+      resumeVia?: string;
+      resumeReason?: string;
+    }>(),
     status: messageStatusEnum().notNull().default('draft'),
     checkStatus: checkStatusEnum().notNull().default('pending'),
     checkIssues: jsonb().$type<GateIssue[]>(),

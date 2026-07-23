@@ -6,7 +6,7 @@ import {
   prepareContext,
   prepareDraft,
   prepareGate,
-  type PrepareContext,
+  type PrepareStepResult,
 } from '@/lib/engine/prepare';
 import { sendDigest } from '@/lib/engine/digest';
 import { sendOne } from '@/lib/engine/send-one';
@@ -38,13 +38,15 @@ export async function outreachRun(runId: string, contactIds?: string[]) {
   // Step 3 — context → draft → faithfulness gate. Three steps per message,
   // not one: a single serverless invocation cannot carry a job-posting fetch,
   // grounded research, a draft, and a gate inside its time budget. Each step
-  // retries independently. Flags become needs_review and are skipped by the
-  // drip. Fail fast, before anything sends.
+  // retries independently, and each takes only an ID — the gathered context
+  // lives in the database, because durable workflows persist every step
+  // argument for replay and a few KB per step compounds until the run dies.
+  // Flags become needs_review and are skipped by the drip.
   for (const messageId of plan.messageIds) {
     const ctx = await stepContext(messageId);
     if (!ctx.ready) continue;
-    await stepDraft(messageId, ctx);
-    await stepGate(messageId, ctx);
+    await stepDraft(messageId);
+    await stepGate(messageId);
   }
 
   // Step 4 — digest to the operator, then the grace window to cancel.
@@ -72,22 +74,22 @@ async function stepPlan(runId: string, contactIds?: string[]): Promise<RunPlan> 
   return planRun(db, runId, contactIds ? { contactIds } : {});
 }
 
-async function stepContext(messageId: string): Promise<PrepareContext> {
+async function stepContext(messageId: string): Promise<PrepareStepResult> {
   'use step';
   const db = await getDb();
   return prepareContext(db, messageId);
 }
 
-async function stepDraft(messageId: string, ctx: PrepareContext): Promise<void> {
+async function stepDraft(messageId: string): Promise<void> {
   'use step';
   const db = await getDb();
-  await prepareDraft(db, messageId, ctx);
+  await prepareDraft(db, messageId);
 }
 
-async function stepGate(messageId: string, ctx: PrepareContext): Promise<string> {
+async function stepGate(messageId: string): Promise<string> {
   'use step';
   const db = await getDb();
-  const { outcome } = await prepareGate(db, messageId, ctx);
+  const { outcome } = await prepareGate(db, messageId);
   return outcome;
 }
 

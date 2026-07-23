@@ -168,17 +168,40 @@ describe('prepare split into workflow-sized steps', () => {
       selectModel: jsonModel({ resumeLabel: 'ML' }),
     };
 
-    // Drive the three steps exactly as the durable workflow does.
+    // Drive the three steps exactly as the durable workflow does — passing
+    // only the message id, never a payload.
     const ctx = await prepareContext(db, message.id, deps);
     expect(ctx.ready).toBe(true);
-    await prepareDraft(db, message.id, ctx, deps);
-    const { outcome } = await prepareGate(db, message.id, ctx, deps);
+    await prepareDraft(db, message.id, deps);
+    const { outcome } = await prepareGate(db, message.id, deps);
 
     expect(outcome).toBe('queued');
     const [after] = await db.select().from(messages).where(eq(messages.id, message.id));
     expect(after?.status).toBe('queued');
     expect(after?.subject).toBe('Split subject');
     expect(after?.resumeId).toBe(ml.id); // resume pinned by the context step
+  });
+
+  it('keeps the value passed between steps tiny (workflow state stays small)', async () => {
+    const { user } = await seedTwoResumes();
+    const contact = await mkContact(db, user.clerkUserId, {
+      targetRole: 'ML Engineer',
+      researchOptIn: false,
+      company: '',
+    });
+    const message = await mkMessage(db, user.clerkUserId, contact.id, {
+      status: 'draft',
+      body: '',
+    });
+
+    const ctx = await prepareContext(db, message.id, {
+      selectModel: jsonModel({ resumeLabel: 'ML' }),
+    });
+    // Durable workflows persist every step argument/result for replay, so a
+    // fat context here compounds until the run collapses. Guard the shape.
+    const bytes = Buffer.byteLength(JSON.stringify(ctx));
+    expect(bytes).toBeLessThan(200);
+    expect(Object.keys(ctx).sort()).toEqual(['ready']);
   });
 
   it('stops after the context step when the contact is suppressed', async () => {
@@ -192,9 +215,9 @@ describe('prepare split into workflow-sized steps', () => {
     const ctx = await prepareContext(db, message.id);
     expect(ctx).toEqual({ ready: false, outcome: 'cancelled' });
 
-    // Later steps are no-ops on a non-ready context — nothing gets drafted.
-    await prepareDraft(db, message.id, ctx);
-    const { outcome } = await prepareGate(db, message.id, ctx);
+    // Later steps are no-ops once the message is cancelled — nothing drafts.
+    await prepareDraft(db, message.id);
+    const { outcome } = await prepareGate(db, message.id);
     expect(outcome).toBe('cancelled');
     const [after] = await db.select().from(messages).where(eq(messages.id, message.id));
     expect(after?.status).toBe('cancelled');
