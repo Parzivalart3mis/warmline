@@ -2,7 +2,7 @@
 
 import { useMemo, useState } from 'react';
 import useSWR from 'swr';
-import { Send, Inbox, Loader2 } from 'lucide-react';
+import { Send, Inbox, Loader2, X } from 'lucide-react';
 import { toast } from 'sonner';
 import { fetcher, apiSend, ClientError } from '@/lib/api-client';
 import type { RunDetail, MessageWithContact, SettingsDTO } from '@/lib/types';
@@ -11,10 +11,13 @@ import { fullName } from '@/lib/types';
 import { StatusPill, type PillStatus } from '@/components/status-pill';
 import { EmptyState, ErrorState, ListSkeleton } from '@/components/states';
 import { Button } from '@/components/ui/button';
+import { Dialog, DialogContent, DialogDescription, DialogTitle } from '@/components/ui/dialog';
 import { timeOfDay, initials } from '@/lib/format';
 import { HairlineSweep } from './hairline-row';
 
 const ACTIVE = new Set(['planning', 'waiting', 'sending']);
+/** Statuses that can still be pulled out of a run without touching the rest. */
+const ROW_CANCELLABLE = new Set(['draft', 'queued']);
 
 export function QueueBoard() {
   const {
@@ -43,6 +46,8 @@ export function QueueBoard() {
 
   const [starting, setStarting] = useState(false);
   const [cancelling, setCancelling] = useState(false);
+  const [dropTarget, setDropTarget] = useState<MessageWithContact | null>(null);
+  const [dropping, setDropping] = useState(false);
 
   const intervalMs = (settings?.settings.intervalSeconds ?? 120) * 1000;
 
@@ -73,6 +78,24 @@ export function QueueBoard() {
     }
   };
 
+  /** Pull ONE person out of the run; everyone else keeps sending. */
+  const dropOne = async () => {
+    if (!dropTarget) return;
+    setDropping(true);
+    try {
+      await apiSend(`/api/messages/${dropTarget.id}/cancel`, 'POST');
+      toast.success(
+        `${fullName(dropTarget.contact)} removed from this run. The rest continue as planned.`,
+      );
+      setDropTarget(null);
+      await refetchDetail();
+    } catch (err) {
+      toast.error(err instanceof ClientError ? err.message : 'Could not remove them.');
+    } finally {
+      setDropping(false);
+    }
+  };
+
   if (runsLoading) return <ListSkeleton rows={6} />;
   if (runsError) {
     return <ErrorState message="Could not load your runs." onRetry={() => refetchRuns()} />;
@@ -98,6 +121,7 @@ export function QueueBoard() {
   const waiting = messages.filter((m) => ['queued', 'draft'].includes(m.status)).length;
   const sendingMsg = messages.find((m) => m.status === 'sending');
   const canCancel = ACTIVE.has(activeRun.status) && !activeRun.cancelled;
+  const runIsLive = ACTIVE.has(activeRun.status) && !activeRun.cancelled;
 
   return (
     <div className="space-y-4">
@@ -134,10 +158,33 @@ export function QueueBoard() {
               message={m}
               intervalMs={intervalMs}
               last={i === messages.length - 1}
+              canDrop={runIsLive && ROW_CANCELLABLE.has(m.status)}
+              onDrop={() => setDropTarget(m)}
             />
           ))}
         </ol>
       )}
+
+      <Dialog open={dropTarget !== null} onOpenChange={(o) => !o && setDropTarget(null)}>
+        <DialogContent>
+          <DialogTitle>
+            Remove {dropTarget ? fullName(dropTarget.contact) : 'this contact'} from the run?
+          </DialogTitle>
+          <DialogDescription>
+            Only this email is cancelled — everyone else in the run still sends. The contact goes
+            back to “Not sent”, so you can email them another day with a different angle.
+          </DialogDescription>
+          <div className="flex gap-2">
+            <Button variant="secondary" className="flex-1" onClick={() => setDropTarget(null)}>
+              Keep them in
+            </Button>
+            <Button variant="destructive" className="flex-1" disabled={dropping} onClick={dropOne}>
+              {dropping ? <Loader2 className="animate-spin" /> : null}
+              Remove from run
+            </Button>
+          </div>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }
@@ -216,10 +263,14 @@ function QueueRow({
   message,
   intervalMs,
   last,
+  canDrop,
+  onDrop,
 }: {
   message: MessageWithContact;
   intervalMs: number;
   last: boolean;
+  canDrop: boolean;
+  onDrop: () => void;
 }) {
   const sending = message.status === 'sending';
 
@@ -249,6 +300,15 @@ function QueueRow({
                 : ''}
           </span>
         </div>
+        {canDrop && (
+          <button
+            onClick={onDrop}
+            aria-label={`Remove ${fullName(message.contact)} from this run`}
+            className="ui-chrome flex size-11 shrink-0 items-center justify-center rounded-md text-muted active:bg-bg"
+          >
+            <X className="size-4" aria-hidden="true" />
+          </button>
+        )}
       </div>
       {sending && <HairlineSweep intervalMs={intervalMs} />}
     </li>

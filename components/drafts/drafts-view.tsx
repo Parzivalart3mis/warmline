@@ -2,8 +2,9 @@
 
 import { useMemo, useState } from 'react';
 import useSWR from 'swr';
-import { FileText, PenLine, PauseCircle } from 'lucide-react';
-import { fetcher } from '@/lib/api-client';
+import { FileText, PenLine, PauseCircle, Loader2 } from 'lucide-react';
+import { toast } from 'sonner';
+import { fetcher, apiSend, ClientError } from '@/lib/api-client';
 import type { ContactDTO, MessageWithContact } from '@/lib/types';
 import { fullName } from '@/lib/types';
 import { StatusPill, type PillStatus } from '@/components/status-pill';
@@ -11,11 +12,12 @@ import { EmptyState, ErrorState, ListSkeleton } from '@/components/states';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Sheet, SheetContent, SheetTitle, SheetDescription } from '@/components/ui/sheet';
-import { relativeTime } from '@/lib/format';
+import { relativeTime, timeOfDay } from '@/lib/format';
 import { DraftEditor } from './draft-editor';
 
 type SheetState =
   | { kind: 'edit'; message: MessageWithContact }
+  | { kind: 'review'; message: MessageWithContact }
   | { kind: 'new'; contact: ContactDTO }
   | { kind: 'pick' }
   | null;
@@ -30,16 +32,38 @@ export function DraftsView() {
     '/api/messages?status=draft',
     fetcher,
   );
+  const { data: queuedData, mutate: mutateQueued } = useSWR<{ messages: MessageWithContact[] }>(
+    '/api/messages?status=queued',
+    fetcher,
+    { refreshInterval: 15_000 },
+  );
   const [sheet, setSheet] = useState<SheetState>(null);
+  const [cancelling, setCancelling] = useState(false);
 
   const held = data?.messages ?? [];
   const draftRows = drafts?.messages ?? [];
+  const queued = queuedData?.messages ?? [];
   const all = [...held, ...draftRows];
 
   const refresh = () => {
     setSheet(null);
     void mutate();
     void mutateDrafts();
+    void mutateQueued();
+  };
+
+  /** Pull one queued email out of its run; the rest keep sending. */
+  const cancelQueued = async (m: MessageWithContact) => {
+    setCancelling(true);
+    try {
+      await apiSend(`/api/messages/${m.id}/cancel`, 'POST');
+      toast.success(`${fullName(m.contact)} won't be emailed. The rest of the run continues.`);
+      refresh();
+    } catch (err) {
+      toast.error(err instanceof ClientError ? err.message : 'Could not cancel that send.');
+    } finally {
+      setCancelling(false);
+    }
   };
 
   return (
@@ -47,6 +71,35 @@ export function DraftsView() {
       <Button onClick={() => setSheet({ kind: 'pick' })} className="w-full">
         <PenLine /> Draft a new email
       </Button>
+
+      {queued.length > 0 && (
+        <section className="space-y-2">
+          <h2 className="text-sm font-medium text-muted">
+            Queued to send — tap to read before it goes
+          </h2>
+          <ul className="space-y-2">
+            {queued.map((m) => (
+              <li key={m.id}>
+                <button
+                  onClick={() => setSheet({ kind: 'review', message: m })}
+                  className="flex w-full items-center gap-3 rounded-lg border bg-surface px-3 py-3 text-left"
+                >
+                  <div className="min-w-0 flex-1">
+                    <p className="truncate font-medium">{fullName(m.contact)}</p>
+                    <p className="truncate text-sm text-muted">{m.subject || 'No subject yet'}</p>
+                  </div>
+                  <div className="flex shrink-0 flex-col items-end gap-1">
+                    <StatusPill status="queued" />
+                    <span className="tabular text-xs text-muted">
+                      {m.scheduledFor ? timeOfDay(m.scheduledFor) : ''}
+                    </span>
+                  </div>
+                </button>
+              </li>
+            ))}
+          </ul>
+        </section>
+      )}
 
       {isLoading ? (
         <ListSkeleton rows={4} />
@@ -104,6 +157,39 @@ export function DraftsView() {
               step={sheet.message.step}
               onSent={refresh}
             />
+          )}
+        </SheetContent>
+      </Sheet>
+
+      {/* Read-only review of a queued email, with a per-person cancel */}
+      <Sheet open={sheet?.kind === 'review'} onOpenChange={(o) => !o && setSheet(null)}>
+        <SheetContent>
+          <SheetTitle>Queued to send</SheetTitle>
+          <SheetDescription>
+            This exact email will go out with the run. To change it, cancel this send and redraft.
+          </SheetDescription>
+          {sheet?.kind === 'review' && (
+            <div className="space-y-4">
+              <p className="text-sm text-muted">
+                To <span className="text-ink">{fullName(sheet.message.contact)}</span>
+                {sheet.message.scheduledFor
+                  ? ` · around ${timeOfDay(sheet.message.scheduledFor)}`
+                  : ''}
+              </p>
+              <div className="rounded-md border bg-bg p-4">
+                <p className="font-serif text-lg font-medium">{sheet.message.subject}</p>
+                <p className="font-email mt-3 whitespace-pre-wrap">{sheet.message.body}</p>
+              </div>
+              <Button
+                variant="destructive"
+                className="w-full"
+                disabled={cancelling}
+                onClick={() => cancelQueued(sheet.message)}
+              >
+                {cancelling ? <Loader2 className="animate-spin" /> : null}
+                Cancel this send only
+              </Button>
+            </div>
           )}
         </SheetContent>
       </Sheet>
