@@ -1,7 +1,7 @@
 import { and, eq } from 'drizzle-orm';
 import type { LanguageModel } from 'ai';
 import type { Db } from '@/lib/db';
-import { contacts, messages, users, type ResearchFact } from '@/db/schema';
+import { contacts, messages, resumes, users, type ResearchFact } from '@/db/schema';
 import { generateDraft } from '@/lib/ai/draft';
 import { runGate, gateMode } from '@/lib/ai/gate';
 import { researchCompany, isResearchFresh } from '@/lib/ai/research';
@@ -56,7 +56,9 @@ async function load(db: Db, messageId: string): Promise<Prepared | null> {
     .limit(1);
   if (!contact || !user) return null;
 
-  const { resumes } = await import('@/db/schema');
+  // Static import only. A dynamic `await import()` here is invisible to the
+  // Workflow SDK's build-time module graph, so the step throws at runtime and
+  // the workflow retries it forever.
   const [resume] = message.resumeId
     ? await db.select().from(resumes).where(eq(resumes.id, message.resumeId)).limit(1)
     : [];

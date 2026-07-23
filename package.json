@@ -7,7 +7,7 @@
     "dev": "next dev",
     "build": "next build",
     "start": "next start",
-    "lint": "eslint . && pnpm check:inputs && pnpm check:contrast",
+    "lint": "eslint . && pnpm check:inputs && pnpm check:contrast && pnpm check:workflow",
     "typecheck": "tsc --noEmit",
     "test": "vitest run",
     "test:e2e": "playwright test",
@@ -20,7 +20,8 @@
     "icons": "tsx scripts/icons.ts",
     "check:contrast": "tsx scripts/check-contrast.ts",
     "check:inputs": "tsx scripts/check-input-font.ts",
-    "prepare": "husky"
+    "prepare": "husky",
+    "check:workflow": "tsx scripts/check-workflow-imports.ts"
   },
   "lint-staged": {
     "*.{ts,tsx}": [
